@@ -1,0 +1,52 @@
+{
+    "name": "ledric/laravel",
+    "description": "Laravel client, admin proxy, and asset proxy for ledric. Caches reads via Laravel's cache and degrades gracefully when ledric is unreachable.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["ledric", "laravel", "cms", "headless", "proxy"],
+    "homepage": "https://github.com/getledric/ledric-laravel",
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "ext-json": "*",
+        "illuminate/support": "^6.20 || ^7.0 || ^8.0 || ^9.0 || ^10.0",
+        "illuminate/http": "^6.20 || ^7.0 || ^8.0 || ^9.0 || ^10.0",
+        "illuminate/cache": "^6.20 || ^7.0 || ^8.0 || ^9.0 || ^10.0",
+        "illuminate/contracts": "^6.20 || ^7.0 || ^8.0 || ^9.0 || ^10.0",
+        "guzzlehttp/guzzle": "^6.5 || ^7.0",
+        "guzzlehttp/psr7": "^1.7 || ^2.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^4.0",
+        "phpunit/phpunit": "^8.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ledric\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ledric\\Laravel\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Ledric\\Laravel\\LedricServiceProvider"
+            ],
+            "aliases": {
+                "Ledric": "Ledric\\Laravel\\Facades\\Ledric"
+            }
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit"
+    },
+    "config": {
+        "audit": {
+            "abandoned": "ignore"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
