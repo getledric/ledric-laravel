@@ -3,20 +3,28 @@
 ## Unreleased
 
 ### Fixed
+- **AdminProxy demuxes API vs GUI paths.** ledric's API endpoints
+  (`/types`, `/rpc`, `/entries/...`, `/assets/...`, `/tags`, `/auth/...`,
+  `/.well-known/...`, `/mcp`) live at the upstream root, but the GUI is
+  under `/admin/*`. The proxy now routes the first-segment-matching
+  API paths to root and prefixes everything else with the GUI mount.
+  Without this, `api.types()` 404'd and the inline editor surfaced
+  "Unknown type 'X'" for every editable element. Configurable via
+  `ledric.admin.upstream_root_paths`.
 - **AdminProxyController** no longer throws `Unable to read from stream`
   on every response. PSR-7 `Stream::read()` over curl-backed Guzzle
   bodies returns `false` at EOF before `eof()` flips, which the
   streaming loop didn't survive. Body is now buffered — admin GUI
   traffic is bounded HTML/JS/CSS, not large binaries (those go through
   `AssetProxyController`).
-- **Outbound proxy path** now prefixes ledric's GUI mount.
-  `/ledric-admin/inline.js` correctly reaches `<ledric>/admin/inline.js`
-  rather than `<ledric>/inline.js` (404). Configurable via
-  `LEDRIC_ADMIN_UPSTREAM_PREFIX` (default `admin`).
+- **Outbound proxy path** now prefixes ledric's GUI mount on non-API
+  routes. `/ledric-admin/inline.js` correctly reaches
+  `<ledric>/admin/inline.js` rather than `<ledric>/inline.js` (404).
+  Configurable via `LEDRIC_ADMIN_UPSTREAM_PREFIX` (default `admin`).
 
 ### Added
 - `AdminProxyTest` covering both fixes plus header forwarding,
-  upstream-prefix translation, and 503-on-unreachable.
+  upstream-prefix translation, API/GUI demux, and 503-on-unreachable.
 
 ### Changed
 - Drops `'stream' => true` from `Client::forwardAdmin` since the

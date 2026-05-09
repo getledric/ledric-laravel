@@ -102,6 +102,66 @@ class AdminProxyTest extends TestCase
         $this->assertStringContainsString('unreachable', $response->getContent());
     }
 
+    public function test_api_path_types_forwards_to_root_not_admin_prefix(): void
+    {
+        // ledric's /types is at root. The GUI's api.types() calls
+        // /ledric-admin/types which the proxy must NOT prefix with
+        // /admin/ (that would 404 and surface as "Unknown type X" in
+        // the inline editor).
+        $this->mockHandler->append(new Response(200, [], '{"types":[]}'));
+
+        $this->app->make(AdminProxyController::class)
+            ->handle(Request::create('/ledric-admin/types'), 'types');
+
+        $this->assertSame('/types', $this->history[0]['request']->getUri()->getPath());
+    }
+
+    public function test_api_path_auth_status_forwards_to_root(): void
+    {
+        $this->mockHandler->append(new Response(200, [], '{"required":false}'));
+
+        $this->app->make(AdminProxyController::class)
+            ->handle(Request::create('/ledric-admin/auth/status'), 'auth/status');
+
+        $this->assertSame('/auth/status', $this->history[0]['request']->getUri()->getPath());
+    }
+
+    public function test_api_path_rpc_forwards_to_root(): void
+    {
+        $this->mockHandler->append(new Response(200, [], '{"result":null}'));
+
+        $this->app->make(AdminProxyController::class)
+            ->handle(Request::create('/ledric-admin/rpc', 'POST'), 'rpc');
+
+        $this->assertSame('/rpc', $this->history[0]['request']->getUri()->getPath());
+    }
+
+    public function test_gui_path_inline_js_keeps_admin_prefix(): void
+    {
+        // inline.js lives at <ledric>/admin/inline.js — must not be
+        // demux'd to root.
+        $this->mockHandler->append(new Response(200, [], 'console.log()'));
+
+        $this->app->make(AdminProxyController::class)
+            ->handle(Request::create('/ledric-admin/inline.js'), 'inline.js');
+
+        $this->assertSame('/admin/inline.js', $this->history[0]['request']->getUri()->getPath());
+    }
+
+    public function test_gui_path_spa_deep_route_keeps_admin_prefix(): void
+    {
+        // SPA routes like /inline/page/about are unknown to the demux
+        // and fall into the admin-prefix branch. ledric's setNotFound-
+        // Handler serves the SPA HTML for any HTML request under the
+        // mount.
+        $this->mockHandler->append(new Response(200, [], '<html>'));
+
+        $this->app->make(AdminProxyController::class)
+            ->handle(Request::create('/ledric-admin/inline/page/about-summit'), 'inline/page/about-summit');
+
+        $this->assertSame('/admin/inline/page/about-summit', $this->history[0]['request']->getUri()->getPath());
+    }
+
     public function test_handle_strips_inbound_authorization_and_cookies(): void
     {
         $this->mockHandler->append(new Response(200, [], 'ok'));

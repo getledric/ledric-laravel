@@ -47,10 +47,9 @@ class AdminProxyController extends Controller
     {
         $externalPrefix = '/' . trim((string) config('ledric.admin.route_prefix', 'ledric-admin'), '/');
         $upstreamPrefix = trim((string) config('ledric.admin.upstream_prefix', 'admin'), '/');
+        $rootPaths      = (array) config('ledric.admin.upstream_root_paths', []);
 
-        $upstreamPath = $upstreamPrefix === ''
-            ? $path
-            : ($path === '' ? $upstreamPrefix : $upstreamPrefix . '/' . ltrim($path, '/'));
+        $upstreamPath = $this->resolveUpstreamPath($path, $upstreamPrefix, $rootPaths);
 
         try {
             $upstream = $this->client->forwardAdmin(
@@ -79,6 +78,33 @@ class AdminProxyController extends Controller
             $upstream->getStatusCode(),
             $this->relayHeaders($upstream->getHeaders())
         );
+    }
+
+    /**
+     * Demux GUI vs API paths. ledric's API endpoints (`/types`, `/rpc`,
+     * `/entries/...`, `/assets/...`, `/tags`, `/auth/...`) live at the
+     * upstream root, but the GUI is under `/admin/*`. The browser
+     * calls everything through `/ledric-admin/*` because the GUI's
+     * api.js builds absolute paths from `window.LEDRIC_BASE_URL`.
+     * This routes the API segments to root and prefixes everything
+     * else with the upstream GUI mount.
+     *
+     * @param  array<int, string>  $rootPaths
+     */
+    protected function resolveUpstreamPath(string $path, string $upstreamPrefix, array $rootPaths): string
+    {
+        $clean = ltrim($path, '/');
+        $first = $clean === '' ? '' : (explode('/', $clean, 2)[0] ?? '');
+
+        if ($first !== '' && in_array($first, $rootPaths, true)) {
+            return $clean;
+        }
+
+        if ($upstreamPrefix === '') {
+            return $clean;
+        }
+
+        return $clean === '' ? $upstreamPrefix : $upstreamPrefix . '/' . $clean;
     }
 
     /**

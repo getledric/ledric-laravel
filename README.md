@@ -98,11 +98,15 @@ ledric and cached per-variant.
 
 The proxy sets `X-Forwarded-Prefix` on outbound requests so ledric
 emits a `<base href>` and `window.LEDRIC_BASE_URL` matching the
-external prefix. Outbound paths are prefixed with
+external prefix. Non-API outbound paths are prefixed with
 `config('ledric.admin.upstream_prefix')` (default `admin`, matching
 `ledric serve --gui-mount /admin`) so the GUI is reachable through
-the proxy. Set `LEDRIC_ADMIN_UPSTREAM_PREFIX` if you've started ledric
-with a different `--gui-mount`.
+the proxy. API paths whose first segment is in
+`ledric.admin.upstream_root_paths` (`types`, `rpc`, `entries`,
+`assets`, `tags`, `auth`, `mcp`, `.well-known`) bypass the prefix —
+ledric's API lives at root regardless of where the GUI is mounted.
+Set `LEDRIC_ADMIN_UPSTREAM_PREFIX` if you've started ledric with a
+different `--gui-mount`.
 
 **Requires ledric ≥ 0.3.6** — earlier versions emit `content` instead
 of `fields` and return raw payloads instead of `{result}` envelopes.
