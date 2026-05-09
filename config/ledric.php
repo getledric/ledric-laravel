@@ -68,27 +68,11 @@ return [
             '.well-known',
         ],
 
-        // Middleware applied before AdminGate (which checks user_ids).
-        //
-        // The `ledric.web_no_csrf` group is registered by
-        // LedricServiceProvider — it's a copy of the consumer's `web`
-        // group with VerifyCsrfToken (and any user subclass thereof)
-        // filtered out. The GUI's api.js builds plain `fetch()`
-        // requests with no CSRF token, so VerifyCsrfToken would 419
-        // every write. By copying-and-filtering rather than hardcoding
-        // framework classes, the consumer's App\Http\Middleware\
-        // EncryptCookies (and its $serialize / $except / decryptCookie
-        // overrides) is honored — without that, the proxy and host
-        // app disagree about cookie encoding and the session cookie
-        // silently drops on every proxy request (looks like a logout).
-        //
-        // The proxy is a same-origin admin surface gated by AdminGate's
-        // user-ID allow-list, and Laravel's default SameSite=Lax on
-        // the session cookie blocks cross-site CSRF. Override here if
-        // you want CSRF back on (then add this prefix to your
-        // App\Http\Middleware\VerifyCsrfToken::$except OR inject the
-        // CSRF token into the GUI yourself).
-        'middleware' => ['ledric.web_no_csrf', 'auth'],
+        // Standard `web` + `auth` stack. ledric ≥ 0.3.9's GUI reads the
+        // XSRF-TOKEN cookie and forwards it as `X-XSRF-TOKEN` on every
+        // request, so VerifyCsrfToken accepts proxied POSTs without
+        // any package-side acrobatics.
+        'middleware' => ['web', 'auth'],
     ],
 
     'assets' => [

@@ -2,23 +2,18 @@
 
 ## Unreleased
 
-### Fixed
-- **Session cookie silently dropped on proxy requests when the host
-  app customizes `EncryptCookies`.** The previous fix (e3dd1fc)
-  hardcoded `\Illuminate\Cookie\Middleware\EncryptCookies` in the
-  default admin-middleware list. Most Laravel apps subclass that to
-  set `protected static $serialize = true`, override `decryptCookie()`,
-  or extend `$except`. Hardcoding the framework class bypassed those
-  overrides, so the proxy and host app disagreed about cookie encoding;
-  the session cookie failed to decrypt on every `/ledric-admin/*`
-  request and the user looked logged out. Replaced with a derived
-  middleware group `ledric.web_no_csrf`, registered in
-  `LedricServiceProvider::boot()` — it copies the consumer's `web`
-  group and filters out `VerifyCsrfToken` (and any user subclass
-  thereof, by `is_subclass_of`). The default `admin.middleware` is now
-  `['ledric.web_no_csrf', 'auth']`. Existing published configs with
-  the hardcoded list keep working; re-publish or set the new value
-  manually to pick up the fix.
+### Changed (breaking — requires ledric ≥ 0.3.9)
+- **Default admin middleware is back to `['web', 'auth']`.** Both the
+  earlier `web`-minus-CSRF hardcode (e3dd1fc) and the derived
+  `ledric.web_no_csrf` group (db938bd) are gone. The GUI now reads the
+  Laravel `XSRF-TOKEN` cookie and forwards it as `X-XSRF-TOKEN`
+  (ledric ≥ 0.3.9), so `VerifyCsrfToken` accepts proxied POSTs the
+  Laravel-idiomatic way — no custom middleware machinery, no
+  `EncryptCookies`-subclass mismatch, no security trade-off.
+  **Action:** users on a published config need to re-publish
+  (`php artisan vendor:publish --tag=ledric-config --force`) or set
+  `admin.middleware` to `['web', 'auth']` manually. Bump ledric to
+  ≥ 0.3.9 first.
 - **Asset uploads were forwarding empty bodies.** PHP populates
   `$_FILES`/`$_POST` for `multipart/form-data` requests and leaves
   `php://input` empty; the proxy's `$request->getContent()` returned
