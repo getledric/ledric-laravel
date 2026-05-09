@@ -165,45 +165,51 @@ class CachedClient
 
     // ─────────────────────────── writes ───────────────────────────
 
-    public function draftEntry(array $args): array
+    public function draftEntry(string $type, array $fields, ?string $slug = null, array $opts = []): array
     {
-        $r = $this->client->draftEntry($args);
-        $this->invalidateType($this->extractType($args));
+        $r = $this->client->draftEntry($type, $fields, $slug, $opts);
+        $this->invalidateType($type);
         return $r;
     }
 
-    public function publishEntry(array $args): array
+    public function publishEntry(string $type, string $slug, ?int $version = null): array
     {
-        $r = $this->client->publishEntry($args);
-        $this->invalidateType($this->extractType($args));
+        $r = $this->client->publishEntry($type, $slug, $version);
+        $this->invalidateType($type);
         return $r;
     }
 
-    public function renameEntry(array $args): array
+    public function renameEntry(string $type, string $slug, string $newSlug, ?string $locale = null): array
     {
-        $r = $this->client->renameEntry($args);
-        $this->invalidateType($this->extractType($args));
+        $r = $this->client->renameEntry($type, $slug, $newSlug, $locale);
+        $this->invalidateType($type);
         return $r;
     }
 
-    public function deleteEntry(array $args): array
+    public function deleteEntry(string $type, string $slug): array
     {
-        $r = $this->client->deleteEntry($args);
-        $this->invalidateType($this->extractType($args));
+        $r = $this->client->deleteEntry($type, $slug);
+        $this->invalidateType($type);
         return $r;
     }
 
-    public function addEntryTags(array $args): array
+    /**
+     * @param  array<int, string>  $tags
+     */
+    public function addEntryTags(string $type, string $slug, array $tags): array
     {
-        $r = $this->client->addEntryTags($args);
-        $this->invalidateType($this->extractType($args));
+        $r = $this->client->addEntryTags($type, $slug, $tags);
+        $this->invalidateType($type);
         return $r;
     }
 
-    public function removeEntryTags(array $args): array
+    /**
+     * @param  array<int, string>  $tags
+     */
+    public function removeEntryTags(string $type, string $slug, array $tags): array
     {
-        $r = $this->client->removeEntryTags($args);
-        $this->invalidateType($this->extractType($args));
+        $r = $this->client->removeEntryTags($type, $slug, $tags);
+        $this->invalidateType($type);
         return $r;
     }
 
@@ -213,25 +219,6 @@ class CachedClient
         $this->invalidateType($args['name'] ?? ($args['type'] ?? null));
         $this->invalidateMeta();
         return $r;
-    }
-
-    /**
-     * Pull a type name out of write-method args. Accepts both the flat
-     * `{type, slug}` convenience form and the wire `{ref: {type, slug}}`
-     * form so invalidation works regardless of which shape the caller
-     * used.
-     *
-     * @param  array<string, mixed>  $args
-     */
-    protected function extractType(array $args): ?string
-    {
-        if (isset($args['ref']) && is_array($args['ref']) && isset($args['ref']['type'])) {
-            return (string) $args['ref']['type'];
-        }
-        if (isset($args['type'])) {
-            return (string) $args['type'];
-        }
-        return null;
     }
 
     /**

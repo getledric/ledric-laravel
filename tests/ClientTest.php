@@ -41,45 +41,6 @@ class ClientTest extends TestCase
         $this->assertSame('hello', $body['args']['ref']['slug']);
     }
 
-    public function test_read_normalises_legacy_content_to_fields(): void
-    {
-        // Older ledric servers returned `content`; the wire shape is
-        // `fields` everywhere now. The client renames at the boundary.
-        $this->mockHandler->append(new Response(200, [], json_encode([
-            'result' => [
-                'id'      => 'abc',
-                'type'    => 'post',
-                'slug'    => 'hello',
-                'content' => ['title' => 'Hello'],
-                'version' => 1,
-            ],
-        ])));
-
-        $entry = $this->app->make(Client::class)->read('post', 'hello');
-
-        $this->assertSame(['title' => 'Hello'], $entry['fields']);
-        $this->assertArrayNotHasKey('content', $entry);
-    }
-
-    public function test_find_normalises_each_result_entry(): void
-    {
-        $this->mockHandler->append(new Response(200, [], json_encode([
-            'result' => [
-                'total'   => 2,
-                'results' => [
-                    ['type' => 'post', 'slug' => 'a', 'content' => ['title' => 'A']],
-                    ['type' => 'post', 'slug' => 'b', 'fields'  => ['title' => 'B']],
-                ],
-            ],
-        ])));
-
-        $r = $this->app->make(Client::class)->find(['type' => 'post']);
-
-        $this->assertSame(['title' => 'A'], $r['results'][0]['fields']);
-        $this->assertArrayNotHasKey('content', $r['results'][0]);
-        $this->assertSame(['title' => 'B'], $r['results'][1]['fields']);
-    }
-
     public function test_structured_4xx_errors_extract_code_and_message(): void
     {
         $this->mockHandler->append(new Response(400, [], json_encode([
@@ -137,7 +98,7 @@ class ClientTest extends TestCase
         $this->mockHandler->append(new Response(200, [], json_encode(['ok' => true])));
 
         $client = $this->app->make(Client::class);
-        $client->draftEntry(['type' => 'post', 'slug' => 'x', 'content' => []]);
+        $client->draftEntry('post', ['title' => 'X']);
 
         $auth = $this->history[0]['request']->getHeaderLine('Authorization');
         $this->assertSame('Bearer lka_admin_test', $auth);

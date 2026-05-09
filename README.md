@@ -53,20 +53,23 @@ the previous value is served.
 ## Writing content
 
 ```php
-Ledric::draftEntry([
-    'type'   => 'post',
-    'slug'   => 'new-post',                        // optional — present means update, absent means create
-    'fields' => ['title' => 'Hi', 'body' => '...'],
+// Create (slug auto-assigned by ledric):
+Ledric::draftEntry('post', ['title' => 'Hi', 'body' => '...']);
+
+// Update an existing entry (slug positions it):
+Ledric::draftEntry('post', ['title' => 'Hi'], 'new-post', [
+    'parent_version' => 3,
+    'author'         => 'james',
 ]);
 
-Ledric::publishEntry(['type' => 'post', 'slug' => 'new-post']);
-
-Ledric::renameEntry(['type' => 'post', 'slug' => 'new-post', 'new_slug' => 'shipped']);
-
-Ledric::addEntryTags(['type' => 'post', 'slug' => 'shipped', 'tags' => ['featured']]);
+Ledric::publishEntry('post', 'new-post');             // ?, $version
+Ledric::renameEntry('post', 'new-post', 'shipped');   // ?, $locale
+Ledric::deleteEntry('post', 'shipped');
+Ledric::addEntryTags('post', 'shipped', ['featured']);
+Ledric::removeEntryTags('post', 'shipped', ['featured']);
 ```
 
-Flat `{type, slug}` is auto-translated to the `{ref: {type, slug}}` shape ledric's RPC schemas require, so you can use whichever feels natural. Writes invalidate cached reads of the same type.
+Writes invalidate cached reads of the same type.
 
 ## Asset proxy
 

@@ -71,7 +71,7 @@ class CachedClientTest extends TestCase
 
         // Write to the same type
         $this->mockHandler->append(new Response(200, [], json_encode(['ok' => true])));
-        $cached->publishEntry(['type' => 'post', 'slug' => 'a']);
+        $cached->publishEntry('post', 'a');
 
         // Read again — should hit ledric, not cache
         $this->mockHandler->append(new Response(200, [], json_encode(['slug' => 'a', 'v' => 2])));
