@@ -2,29 +2,32 @@
 
 namespace Ledric\Laravel\Http\Controllers;
 
-use GuzzleHttp\Psr7\Utils as Psr7Utils;
 use Illuminate\Contracts\Routing\ResponseFactory;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Ledric\Laravel\Client;
 use Ledric\Laravel\Exceptions\LedricUnavailableException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Forwards every request under the admin route prefix to the local
  * ledric process. The Laravel app stays the only public face; ledric
  * is invisible from the WWW.
  *
- * Inbound auth headers are stripped (the AdminGate middleware has
- * already authed the user); ledric's admin Bearer is injected by
- * Client::forwardAdmin().
+ * Two configurable prefixes:
+ *   - `ledric.admin.route_prefix` (default `ledric-admin`) — what the
+ *     browser sees. We pass it as `X-Forwarded-Prefix` so ledric
+ *     rewrites `<base href>` and `window.LEDRIC_BASE_URL`.
+ *   - `ledric.admin.upstream_prefix` (default `admin`) — where ledric
+ *     actually mounts the GUI. ledric's CLI defaults to `/admin`; we
+ *     prepend that to outbound paths so e.g. `/ledric-admin/inline.js`
+ *     reaches `/admin/inline.js` upstream rather than `/inline.js`.
  *
- * NOTE on inline GUI base path: ledric serves its own GUI at root
- * (`/`), but here it's reached at e.g. `/ledric-admin/...`. If the
- * GUI emits absolute API paths (`/api/...`) those will miss this
- * prefix. For v1 we just forward everything; if/when the GUI grows
- * absolute-path callers, we can either rewrite the response HTML or
- * teach the GUI a base-path config.
+ * Bodies are buffered, not streamed: PSR-7 `Stream::read()` over a
+ * curl-backed Guzzle body throws `Unable to read from stream` because
+ * `fread()` returns `false` at EOF before `eof()` flips. Streaming
+ * defensively against that quirk isn't worth the trade-off for admin
+ * GUI traffic, which is bounded HTML/JS/CSS — large binary responses
+ * have their own controller (AssetProxyController).
  */
 class AdminProxyController extends Controller
 {
@@ -42,16 +45,21 @@ class AdminProxyController extends Controller
 
     public function handle(Request $request, string $path = '')
     {
-        $prefix = '/' . trim((string) config('ledric.admin.route_prefix', 'ledric-admin'), '/');
+        $externalPrefix = '/' . trim((string) config('ledric.admin.route_prefix', 'ledric-admin'), '/');
+        $upstreamPrefix = trim((string) config('ledric.admin.upstream_prefix', 'admin'), '/');
+
+        $upstreamPath = $upstreamPrefix === ''
+            ? $path
+            : ($path === '' ? $upstreamPrefix : $upstreamPrefix . '/' . ltrim($path, '/'));
 
         try {
             $upstream = $this->client->forwardAdmin(
                 $request->method(),
-                $path,
+                $upstreamPath,
                 $request->headers->all(),
                 $request->getContent() !== '' ? $request->getContent() : null,
                 [
-                    'prefix' => $prefix,
+                    'prefix' => $externalPrefix,
                     'host'   => $request->getHost(),
                     'proto'  => $request->getScheme(),
                 ]
@@ -64,22 +72,13 @@ class AdminProxyController extends Controller
             );
         }
 
-        $body = $upstream->getBody();
+        $body = (string) $upstream->getBody();
 
-        $response = new StreamedResponse(function () use ($body) {
-            // 8 KiB chunks — same default as Symfony's BinaryFileResponse.
-            // Larger chunks waste memory for small responses; smaller
-            // burns syscalls on big asset bodies (we use this controller
-            // for both API JSON and any binary surface ledric exposes
-            // under the admin prefix).
-            while (!$body->eof()) {
-                echo $body->read(8192);
-                @ob_flush();
-                @flush();
-            }
-        }, $upstream->getStatusCode(), $this->relayHeaders($upstream->getHeaders()));
-
-        return $response;
+        return $this->rf->make(
+            $body,
+            $upstream->getStatusCode(),
+            $this->relayHeaders($upstream->getHeaders())
+        );
     }
 
     /**
@@ -89,6 +88,9 @@ class AdminProxyController extends Controller
     protected function relayHeaders(array $headers): array
     {
         // Hop-by-hop headers and PHP-managed encoding mustn't be relayed.
+        // Content-Encoding goes too: Guzzle's default `decode_content: true`
+        // already inflated the body before we cast to string, so the
+        // bytes are plain by the time we hand them to the browser.
         $blocked = ['transfer-encoding', 'connection', 'keep-alive', 'content-encoding', 'content-length'];
         $out = [];
         foreach ($headers as $name => $values) {

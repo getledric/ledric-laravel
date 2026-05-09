@@ -98,7 +98,14 @@ ledric and cached per-variant.
 
 The proxy sets `X-Forwarded-Prefix` on outbound requests so ledric
 emits a `<base href>` and `window.LEDRIC_BASE_URL` matching the
-external prefix. Requires ledric ≥ 0.3.5 for this behavior.
+external prefix. Outbound paths are prefixed with
+`config('ledric.admin.upstream_prefix')` (default `admin`, matching
+`ledric serve --gui-mount /admin`) so the GUI is reachable through
+the proxy. Set `LEDRIC_ADMIN_UPSTREAM_PREFIX` if you've started ledric
+with a different `--gui-mount`.
+
+**Requires ledric ≥ 0.3.6** — earlier versions emit `content` instead
+of `fields` and return raw payloads instead of `{result}` envelopes.
 
 ## Inline editor
 

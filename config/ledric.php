@@ -46,6 +46,12 @@ return [
 
         'route_prefix' => env('LEDRIC_ADMIN_PREFIX', 'ledric-admin'),
 
+        // Path prefix on the *upstream* ledric process where the GUI is
+        // mounted. ledric's CLI defaults `--gui-mount` to `/admin`, so
+        // we prepend `admin/` to outbound paths. Set to '' if you've
+        // started ledric with `--gui-mount /`.
+        'upstream_prefix' => env('LEDRIC_ADMIN_UPSTREAM_PREFIX', 'admin'),
+
         // Middleware applied before AdminGate (which checks user_ids).
         // Default chain auths via the standard 'web' guard.
         'middleware' => ['web', 'auth'],

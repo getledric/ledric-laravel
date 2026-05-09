@@ -213,8 +213,9 @@ class Client
      * Inbound Authorization and cookies are stripped; admin Bearer is
      * injected. `X-Forwarded-*` headers tell ledric the URL prefix the
      * browser sees so the GUI's injected `<base href>` and
-     * `window.LEDRIC_BASE_URL` resolve correctly. The PSR-7 response is
-     * returned as-is for streaming.
+     * `window.LEDRIC_BASE_URL` resolve correctly. Body is buffered —
+     * the controller casts to string anyway, and PSR-7 streaming over
+     * curl-backed Guzzle bodies throws at EOF.
      *
      * @param  array<string, array<int, string>>  $headers
      * @param  string|resource|null  $body
@@ -243,7 +244,6 @@ class Client
             return $this->http->request($method, ltrim($path, '/'), [
                 'headers'     => $clean,
                 'body'        => $body,
-                'stream'      => true,
                 'http_errors' => false,
             ]);
         } catch (ConnectException $e) {
