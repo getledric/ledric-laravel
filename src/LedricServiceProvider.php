@@ -97,6 +97,8 @@ class LedricServiceProvider extends ServiceProvider
             __DIR__ . '/../config/ledric.php' => config_path('ledric.php'),
         ], 'ledric-config');
 
+        $this->registerWebSansCsrfGroup();
+
         $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
 
         // Blade directives for the inline editor surface.
@@ -112,5 +114,81 @@ class LedricServiceProvider extends ServiceProvider
         Blade::directive('ledricRefAttrs', function ($expression) {
             return '<?php echo \\Ledric\\Laravel\\Inline::refAttrsHtml(' . $expression . '); ?>';
         });
+    }
+
+    /**
+     * Register the `ledric.web_no_csrf` middleware group: a copy of the
+     * consumer's `web` group with VerifyCsrfToken (and any user
+     * subclass thereof) filtered out.
+     *
+     * Why this exists, given the previous fix in e3dd1fc hardcoded the
+     * framework's web-stack classes:
+     *
+     * The admin proxy needs the consumer's session/cookie middleware
+     * so authenticated users stay logged in across `/ledric-admin/*`.
+     * Most apps customize `App\Http\Middleware\EncryptCookies` to
+     * override `$serialize`, `$except`, or `decryptCookie()`. Hardcoding
+     * `\Illuminate\Cookie\Middleware\EncryptCookies` directly bypasses
+     * those overrides — the proxy and the host app then disagree about
+     * how cookies are encoded, and the session cookie is silently
+     * dropped on every proxy request (looks like a logout).
+     *
+     * `withoutMiddleware('VerifyCsrfToken')` doesn't help: it matches
+     * by exact class name and the `web` group registers the
+     * consumer's subclass, not the base. Filtering by inheritance
+     * (`is_subclass_of`) catches both.
+     */
+    protected function registerWebSansCsrfGroup(): void
+    {
+        /** @var \Illuminate\Routing\Router $router */
+        $router = $this->app['router'];
+
+        // Force-resolve the HTTP Kernel so its constructor runs and
+        // pushes the consumer's middleware groups (`web`, `api`, …)
+        // into the router. Service-provider `boot()` normally runs
+        // BEFORE the kernel is instantiated, so without this the
+        // router has no `web` group to copy. Skip during console
+        // requests where the HTTP Kernel binding may not exist —
+        // the proxy routes are HTTP-only anyway.
+        if (!$this->app->runningInConsole() || $this->app->bound(\Illuminate\Contracts\Http\Kernel::class)) {
+            try {
+                $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
+            } catch (\Throwable $e) {
+                // Couldn't resolve — proceed with whatever's registered.
+            }
+        }
+
+        $groups = $router->getMiddlewareGroups();
+        $web    = $groups['web'] ?? null;
+
+        if ($web === null || $web === []) {
+            // No `web` group registered (e.g. a console-only app, or a
+            // heavily stripped kernel). Fall back to a minimal
+            // session-capable stack so the proxy at least gets cookies.
+            $filtered = [
+                \Illuminate\Cookie\Middleware\EncryptCookies::class,
+                \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+                \Illuminate\Session\Middleware\StartSession::class,
+                \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+                \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            ];
+        } else {
+            $csrf = \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class;
+
+            $filtered = array_values(array_filter($web, function ($mw) use ($csrf) {
+                if (!is_string($mw)) {
+                    return true;        // closures, arrays — keep as-is
+                }
+                if (!class_exists($mw)) {
+                    return true;        // aliases / unresolvable strings — keep
+                }
+                if ($mw === $csrf) {
+                    return false;
+                }
+                return !is_subclass_of($mw, $csrf);
+            }));
+        }
+
+        $router->middlewareGroup('ledric.web_no_csrf', $filtered);
     }
 }

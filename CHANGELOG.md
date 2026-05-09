@@ -3,6 +3,22 @@
 ## Unreleased
 
 ### Fixed
+- **Session cookie silently dropped on proxy requests when the host
+  app customizes `EncryptCookies`.** The previous fix (e3dd1fc)
+  hardcoded `\Illuminate\Cookie\Middleware\EncryptCookies` in the
+  default admin-middleware list. Most Laravel apps subclass that to
+  set `protected static $serialize = true`, override `decryptCookie()`,
+  or extend `$except`. Hardcoding the framework class bypassed those
+  overrides, so the proxy and host app disagreed about cookie encoding;
+  the session cookie failed to decrypt on every `/ledric-admin/*`
+  request and the user looked logged out. Replaced with a derived
+  middleware group `ledric.web_no_csrf`, registered in
+  `LedricServiceProvider::boot()` — it copies the consumer's `web`
+  group and filters out `VerifyCsrfToken` (and any user subclass
+  thereof, by `is_subclass_of`). The default `admin.middleware` is now
+  `['ledric.web_no_csrf', 'auth']`. Existing published configs with
+  the hardcoded list keep working; re-publish or set the new value
+  manually to pick up the fix.
 - **Asset uploads were forwarding empty bodies.** PHP populates
   `$_FILES`/`$_POST` for `multipart/form-data` requests and leaves
   `php://input` empty; the proxy's `$request->getContent()` returned

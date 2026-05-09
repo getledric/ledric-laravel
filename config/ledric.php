@@ -70,28 +70,25 @@ return [
 
         // Middleware applied before AdminGate (which checks user_ids).
         //
-        // Default is the standard `web` group MINUS VerifyCsrfToken.
-        // The GUI's api.js builds plain `fetch()` requests with no
-        // CSRF token, so VerifyCsrfToken would 419 every write. The
-        // proxy is a same-origin admin surface gated by AdminGate's
-        // user-ID allow-list, and Laravel's default SameSite=Lax on
-        // the session cookie already blocks cross-site CSRF. We don't
-        // use the literal 'web' alias because it'd pull in the user's
-        // App\Http\Middleware\VerifyCsrfToken, which `withoutMiddleware`
-        // can't reliably exclude across versions.
+        // The `ledric.web_no_csrf` group is registered by
+        // LedricServiceProvider — it's a copy of the consumer's `web`
+        // group with VerifyCsrfToken (and any user subclass thereof)
+        // filtered out. The GUI's api.js builds plain `fetch()`
+        // requests with no CSRF token, so VerifyCsrfToken would 419
+        // every write. By copying-and-filtering rather than hardcoding
+        // framework classes, the consumer's App\Http\Middleware\
+        // EncryptCookies (and its $serialize / $except / decryptCookie
+        // overrides) is honored — without that, the proxy and host
+        // app disagree about cookie encoding and the session cookie
+        // silently drops on every proxy request (looks like a logout).
         //
-        // Override to ['web', 'auth'] (or your own stack) if you want
-        // CSRF on top — you'll then need to add this prefix to your
-        // App\Http\Middleware\VerifyCsrfToken::$except array OR inject
-        // the token into the GUI yourself.
-        'middleware' => [
-            \Illuminate\Cookie\Middleware\EncryptCookies::class,
-            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
-            \Illuminate\Session\Middleware\StartSession::class,
-            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-            \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            'auth',
-        ],
+        // The proxy is a same-origin admin surface gated by AdminGate's
+        // user-ID allow-list, and Laravel's default SameSite=Lax on
+        // the session cookie blocks cross-site CSRF. Override here if
+        // you want CSRF back on (then add this prefix to your
+        // App\Http\Middleware\VerifyCsrfToken::$except OR inject the
+        // CSRF token into the GUI yourself).
+        'middleware' => ['ledric.web_no_csrf', 'auth'],
     ],
 
     'assets' => [
