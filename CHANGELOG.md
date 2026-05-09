@@ -3,6 +3,23 @@
 ## Unreleased
 
 ### Fixed
+- **Asset uploads were forwarding empty bodies.** PHP populates
+  `$_FILES`/`$_POST` for `multipart/form-data` requests and leaves
+  `php://input` empty; the proxy's `$request->getContent()` returned
+  `""`, so ledric saw no `file` part and 400'd. The proxy now detects
+  `multipart/*` Content-Types and rebuilds the multipart body via
+  Guzzle's `multipart` option, regenerating its own boundary.
+- **Stale cache after inline-editor publishes.** The inline drawer
+  POSTs to `/ledric-admin/rpc`, which the proxy forwards directly —
+  bypassing `CachedClient`'s write methods, so type caches were never
+  invalidated. The proxy now inspects successful POSTs to `/rpc`,
+  identifies write tools (`draft`, `publish`, `rename_entry`,
+  `delete_entry`, `add_entry_tags`/`remove_entry_tags`, `alter_type`,
+  `create_type`, `delete_type`, `migrate_entries`), extracts the type
+  from `args.ref.type`/`args.type`/`args.name`, and calls
+  `CachedClient::flush($type)`.
+
+### Changed
 - **CSRF 419 on every proxy POST.** Default admin middleware was
   `['web', 'auth']`, but `web` includes VerifyCsrfToken — the GUI's
   api.js builds plain fetch() requests with no token, so every

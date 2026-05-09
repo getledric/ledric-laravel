@@ -225,7 +225,8 @@ class Client
         string $path,
         array $headers,
         $body,
-        array $forwarded = []
+        array $forwarded = [],
+        ?array $multipart = null
     ): ResponseInterface {
         $clean = $this->scrubInboundHeaders($headers);
         $clean['Authorization'] = 'Bearer ' . $this->adminKey;
@@ -240,12 +241,24 @@ class Client
             $clean['X-Forwarded-Proto'] = (string) $forwarded['proto'];
         }
 
+        $options = [
+            'headers'     => $clean,
+            'http_errors' => false,
+        ];
+
+        if ($multipart !== null) {
+            // Drop inbound Content-Type — Guzzle generates a fresh
+            // `multipart/form-data; boundary=...` to match the parts
+            // it's about to write.
+            unset($options['headers']['Content-Type']);
+            unset($options['headers']['content-type']);
+            $options['multipart'] = $multipart;
+        } else {
+            $options['body'] = $body;
+        }
+
         try {
-            return $this->http->request($method, ltrim($path, '/'), [
-                'headers'     => $clean,
-                'body'        => $body,
-                'http_errors' => false,
-            ]);
+            return $this->http->request($method, ltrim($path, '/'), $options);
         } catch (ConnectException $e) {
             throw new LedricUnavailableException('ledric unreachable on admin proxy', 0, $e);
         } catch (GuzzleException $e) {

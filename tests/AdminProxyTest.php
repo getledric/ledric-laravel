@@ -162,6 +162,98 @@ class AdminProxyTest extends TestCase
         $this->assertSame('/admin/inline/page/about-summit', $this->history[0]['request']->getUri()->getPath());
     }
 
+    public function test_multipart_upload_is_reconstructed_and_forwarded(): void
+    {
+        // PHP eats the raw body for multipart POSTs and leaves
+        // $request->getContent() empty. The proxy must reconstruct
+        // multipart from $_FILES + $_POST or ledric sees no `file`
+        // part and 400s with `missing "file" part`.
+        $this->mockHandler->append(new Response(200, [], '{"id":"abc"}'));
+
+        $file    = \Illuminate\Http\UploadedFile::fake()->createWithContent('avatar.jpg', 'imgbytes');
+        $request = Request::create(
+            '/ledric-admin/assets',
+            'POST',
+            ['alt' => 'a tiny avatar', 'kind' => 'image'],
+            [],
+            ['file' => $file],
+            ['CONTENT_TYPE' => 'multipart/form-data; boundary=----test']
+        );
+
+        $this->app->make(AdminProxyController::class)->handle($request, 'assets');
+
+        $req = $this->history[0]['request'];
+        $this->assertSame('POST', $req->getMethod());
+        $this->assertSame('/assets', $req->getUri()->getPath());
+
+        // Guzzle generates a fresh multipart Content-Type with its own
+        // boundary; the inbound boundary doesn't survive (and shouldn't).
+        $ct = $req->getHeaderLine('Content-Type');
+        $this->assertStringStartsWith('multipart/form-data; boundary=', $ct);
+
+        $body = (string) $req->getBody();
+        $this->assertStringContainsString('name="file"', $body);
+        $this->assertStringContainsString('filename="avatar.jpg"', $body);
+        $this->assertStringContainsString('imgbytes', $body);
+        $this->assertStringContainsString('name="alt"', $body);
+        $this->assertStringContainsString('a tiny avatar', $body);
+        $this->assertStringContainsString('name="kind"', $body);
+    }
+
+    public function test_rpc_publish_flushes_type_cache(): void
+    {
+        // Prime: a read populates the cache.
+        $this->mockHandler->append(new Response(200, [], json_encode([
+            'result' => ['type' => 'page', 'slug' => 'a', 'fields' => ['title' => 'old']],
+        ])));
+        $cached = $this->app->make(\Ledric\Laravel\Cache\CachedClient::class);
+        $cached->read('page', 'a');
+
+        // Publish via the proxy — writes do NOT go through CachedClient,
+        // so without invalidation the next read serves stale cache.
+        $this->mockHandler->append(new Response(200, [], json_encode([
+            'result' => ['published_version' => 2],
+        ])));
+        $request = Request::create('/ledric-admin/rpc', 'POST', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode([
+            'tool' => 'publish',
+            'args' => ['ref' => ['type' => 'page', 'slug' => 'a']],
+        ]));
+        $this->app->make(AdminProxyController::class)->handle($request, 'rpc');
+
+        // Next read MUST hit ledric (cache was flushed for `page`).
+        $this->mockHandler->append(new Response(200, [], json_encode([
+            'result' => ['type' => 'page', 'slug' => 'a', 'fields' => ['title' => 'new']],
+        ])));
+        $entry = $cached->read('page', 'a');
+        $this->assertSame('new', $entry['fields']['title']);
+        $this->assertCount(3, $this->history);  // read, publish, read
+    }
+
+    public function test_rpc_non_write_tool_does_not_flush(): void
+    {
+        // Read is not in WRITE_TOOLS — the cache is left alone so the
+        // proxy doesn't accidentally drop entries on every read.
+        $this->mockHandler->append(new Response(200, [], json_encode([
+            'result' => ['type' => 'page', 'slug' => 'a', 'fields' => ['title' => 'first']],
+        ])));
+        $cached = $this->app->make(\Ledric\Laravel\Cache\CachedClient::class);
+        $cached->read('page', 'a');
+
+        // A read RPC through the proxy mustn't flush.
+        $this->mockHandler->append(new Response(200, [], json_encode(['result' => null])));
+        $request = Request::create('/ledric-admin/rpc', 'POST', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['tool' => 'read', 'args' => ['ref' => ['type' => 'page', 'slug' => 'a']]]));
+        $this->app->make(AdminProxyController::class)->handle($request, 'rpc');
+
+        // A second cached->read must hit cache, not refetch.
+        $entry = $cached->read('page', 'a');
+        $this->assertSame('first', $entry['fields']['title']);
+        $this->assertCount(2, $this->history);  // initial cached read + the proxied read
+    }
+
     public function test_handle_strips_inbound_authorization_and_cookies(): void
     {
         $this->mockHandler->append(new Response(200, [], 'ok'));
