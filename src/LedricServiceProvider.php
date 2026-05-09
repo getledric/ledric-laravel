@@ -35,20 +35,22 @@ class LedricServiceProvider extends ServiceProvider
         $this->app->singleton(Client::class, function ($app) {
             $cfg = $app['config']->get('ledric');
 
-            $adminKey = (string) ($cfg['admin_key'] ?? '');
-            if ($adminKey === '') {
-                // Reads can sometimes work without a key (when ledric runs
-                // open), but writes cannot. Fail loud rather than yielding
-                // confusing 401s in production.
+            $adminKey  = (string) ($cfg['admin_key']  ?? '');
+            $readerKey = (string) ($cfg['reader_key'] ?? '');
+
+            if ($adminKey === '' && $readerKey === '') {
+                // At least one key is required. Reader-only is a valid
+                // posture for public consumer sites; writes will throw
+                // at call time with a clear message.
                 throw new \RuntimeException(
-                    'ledric.admin_key is empty — set LEDRIC_ADMIN_KEY in .env'
+                    'ledric: set LEDRIC_READER_KEY (read-only) and/or LEDRIC_ADMIN_KEY (writes) in .env'
                 );
             }
 
             return new Client(
                 $app->make(Guzzle::class),
                 $adminKey,
-                $cfg['reader_key'] !== null && $cfg['reader_key'] !== '' ? (string) $cfg['reader_key'] : null,
+                $readerKey !== '' ? $readerKey : null,
                 (string) $cfg['env']
             );
         });

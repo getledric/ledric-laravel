@@ -53,7 +53,25 @@ class Client
 
     public function read(string $type, string $slug, array $opts = []): ?array
     {
-        return $this->call('read', array_merge(['type' => $type, 'slug' => $slug], $opts), false);
+        $entry = $this->call('read', array_merge(['ref' => ['type' => $type, 'slug' => $slug]], $opts), false);
+        return is_array($entry) ? $this->normalizeEntry($entry) : $entry;
+    }
+
+    /**
+     * Some ledric server versions emit content under `content`, others under
+     * `fields`. The MCP and REST surfaces both standardise on `fields`, so
+     * we project to that shape here. Idempotent; safe to call on either.
+     *
+     * @param  array<string, mixed>  $entry
+     * @return array<string, mixed>
+     */
+    protected function normalizeEntry(array $entry): array
+    {
+        if (!isset($entry['fields']) && isset($entry['content']) && is_array($entry['content'])) {
+            $entry['fields'] = $entry['content'];
+            unset($entry['content']);
+        }
+        return $entry;
     }
 
     public function find(array $args): array
@@ -221,7 +239,23 @@ class Client
      */
     protected function call(string $tool, array $args, bool $isWrite)
     {
-        $key = $isWrite ? $this->adminKey : ($this->readerKey ?? $this->adminKey);
+        if ($isWrite) {
+            if ($this->adminKey === '') {
+                throw new LedricException(sprintf(
+                    'ledric write %s blocked: LEDRIC_ADMIN_KEY is not configured (reader-only mode)',
+                    $tool
+                ));
+            }
+            $key = $this->adminKey;
+        } else {
+            $key = $this->readerKey ?? ($this->adminKey !== '' ? $this->adminKey : null);
+            if ($key === null) {
+                throw new LedricException(sprintf(
+                    'ledric read %s blocked: no LEDRIC_READER_KEY or LEDRIC_ADMIN_KEY configured',
+                    $tool
+                ));
+            }
+        }
 
         try {
             $resp = $this->http->request('POST', 'rpc', [
@@ -250,11 +284,58 @@ class Client
         }
 
         if ($status >= 400) {
-            $msg = is_array($data) && isset($data['error']) ? (string) $data['error'] : substr($body, 0, 200);
+            $msg = $this->extractErrorMessage($data, $body);
             throw new LedricException(sprintf('ledric %d on %s: %s', $status, $tool, $msg));
         }
 
+        // Successful RPC responses are wrapped as { result: <payload> }.
+        // Unwrap so callers see the same shape they'd get from MCP. A
+        // result of null is meaningful (e.g. read of a missing slug) so
+        // we don't fall back to $data in that case.
+        if (is_array($data) && array_key_exists('result', $data)) {
+            return $data['result'];
+        }
+
         return $data;
+    }
+
+    /**
+     * Pull a printable error string out of whatever shape ledric returned.
+     * RPC errors come back as { code, message, ... }; some tools nest under
+     * `error` (string or object). Fall back to a body excerpt so we never
+     * lose information.
+     *
+     * @param  mixed   $data  json_decode'd response (array | scalar | null)
+     * @param  string  $body  raw response body for fallback
+     */
+    protected function extractErrorMessage($data, string $body): string
+    {
+        if (is_array($data)) {
+            if (isset($data['message']) && is_string($data['message'])) {
+                return isset($data['code']) && is_string($data['code'])
+                    ? $data['code'] . ': ' . $data['message']
+                    : $data['message'];
+            }
+            if (isset($data['error'])) {
+                $err = $data['error'];
+                if (is_string($err)) {
+                    return $err;
+                }
+                if (is_array($err) && isset($err['message']) && is_string($err['message'])) {
+                    return isset($err['code']) && is_string($err['code'])
+                        ? $err['code'] . ': ' . $err['message']
+                        : $err['message'];
+                }
+                $encoded = json_encode($err);
+                if ($encoded !== false) {
+                    return substr($encoded, 0, 200);
+                }
+            }
+        }
+        if (is_string($data)) {
+            return $data;
+        }
+        return substr($body, 0, 200);
     }
 
     /**
