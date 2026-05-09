@@ -74,19 +74,58 @@ class Client
         return $entry;
     }
 
-    public function find(array $args): array
+    /**
+     * Apply `normalizeEntry` to every entry inside a `{results, total}`
+     * payload. find / search_entries on older ledric versions return
+     * each result with `content` rather than `fields`; same defensive
+     * rename as the single-entry path. Idempotent.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function normalizeEntryList(array $payload): array
     {
-        return $this->call('find', $args, false) ?? ['results' => [], 'total' => 0];
+        if (!isset($payload['results']) || !is_array($payload['results'])) {
+            return $payload;
+        }
+        $payload['results'] = array_map(function ($entry) {
+            return is_array($entry) ? $this->normalizeEntry($entry) : $entry;
+        }, $payload['results']);
+        return $payload;
     }
 
+    public function find(array $args): array
+    {
+        $r = $this->call('find', $args, false) ?? ['results' => [], 'total' => 0];
+        return $this->normalizeEntryList($r);
+    }
+
+    /**
+     * Full-text search. Convenience wrapper around `find`'s `q` arg —
+     * ledric doesn't have a separate `search_entries` tool. Throws if
+     * `q` is missing or empty so the caller doesn't accidentally fall
+     * back to an unscoped find().
+     */
     public function searchEntries(array $args): array
     {
-        return $this->call('search_entries', $args, false) ?? ['results' => [], 'total' => 0];
+        if (!isset($args['q']) || trim((string) $args['q']) === '') {
+            throw new \InvalidArgumentException(
+                'searchEntries() requires a non-empty "q" — use find() for unscoped queries'
+            );
+        }
+        return $this->find($args);
     }
 
     public function listTypes(): array
     {
-        return $this->call('list_types', [], false) ?? [];
+        // ledric has no `list_types` RPC tool — type metadata lives
+        // inside `describe_model`'s response. We surface it as its own
+        // method for ergonomic parity with the rest of the API.
+        $model = $this->describeModel();
+        if (isset($model['types']) && is_array($model['types'])) {
+            return $model['types'];
+        }
+        return [];
     }
 
     public function describeModel(): array
@@ -101,29 +140,107 @@ class Client
 
     // ─────────────────────────── writes ───────────────────────────
 
+    /**
+     * Draft a new entry or update an existing one.
+     *
+     * Schema (`draft` tool):
+     *   - type: string (required)
+     *   - fields: array (required)
+     *   - ref: { type, slug } — optional; presence means "update" not "create"
+     *   - parent_version: int — optional, optimistic-concurrency token
+     *   - author: string — optional
+     *
+     * Convenience: callers may pass a flat `slug` (translated to `ref`)
+     * and `content` (translated to `fields`) for legacy compatibility.
+     */
     public function draftEntry(array $args): array
     {
-        return $this->call('draft_entry', $args, true);
+        $args = $this->wrapRef($args);
+        if (isset($args['content']) && !isset($args['fields'])) {
+            $args['fields'] = $args['content'];
+            unset($args['content']);
+        }
+        // `schema_version` was a TS-SDK input that the RPC schema rejects.
+        unset($args['schema_version']);
+
+        $r = $this->call('draft', $args, true);
+        return is_array($r) ? $this->normalizeEntry($r) : ($r ?? []);
     }
 
+    /**
+     * Publish the current (or a specific) version of an entry.
+     *
+     * Schema (`publish` tool):
+     *   - ref: { type, slug } (required)
+     *   - version: int — optional, defaults to the current draft version
+     */
     public function publishEntry(array $args): array
     {
-        return $this->call('publish_entry', $args, true);
+        $args = $this->wrapRef($args);
+        // After wrapRef, `type`/`slug` are absorbed into `ref`. Strip
+        // any other keys the strict RPC schema would reject.
+        $args = array_intersect_key($args, ['ref' => null, 'version' => null]);
+
+        $r = $this->call('publish', $args, true);
+        return is_array($r) ? $this->normalizeEntry($r) : ($r ?? []);
+    }
+
+    /**
+     * Rename an entry's slug.
+     *
+     * Schema (`rename_entry` tool):
+     *   - ref: { type, slug } (required)
+     *   - new_slug: string (required)
+     *   - locale: string (optional)
+     */
+    public function renameEntry(array $args): array
+    {
+        $args = $this->wrapRef($args);
+        $r = $this->call('rename_entry', $args, true);
+        return is_array($r) ? $this->normalizeEntry($r) : ($r ?? []);
+    }
+
+    public function deleteEntry(array $args): array
+    {
+        return $this->call('delete_entry', $this->wrapRef($args), true) ?? [];
     }
 
     public function addEntryTags(array $args): array
     {
-        return $this->call('add_entry_tags', $args, true);
+        return $this->call('add_entry_tags', $this->wrapRef($args), true) ?? [];
     }
 
     public function removeEntryTags(array $args): array
     {
-        return $this->call('remove_entry_tags', $args, true);
+        return $this->call('remove_entry_tags', $this->wrapRef($args), true) ?? [];
     }
 
     public function alterType(array $args): array
     {
-        return $this->call('alter_type', $args, true);
+        return $this->call('alter_type', $args, true) ?? [];
+    }
+
+    /**
+     * Translate `{type, slug, ...}` into `{ref: {type, slug}, ...}` —
+     * the shape every entry-mutation tool's strict schema actually
+     * accepts. No-op when `ref` is already present.
+     *
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    protected function wrapRef(array $args): array
+    {
+        if (isset($args['ref'])) {
+            return $args;
+        }
+        if (isset($args['type'], $args['slug'])) {
+            $args['ref'] = ['type' => $args['type'], 'slug' => $args['slug']];
+            unset($args['slug']);
+            // For tools where `type` is a sibling of `ref` (draft), keep
+            // it. For ones where it's not (publish, rename, tags), the
+            // method's own filter steps strip it.
+        }
+        return $args;
     }
 
     /**

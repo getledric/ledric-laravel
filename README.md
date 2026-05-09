@@ -54,16 +54,19 @@ the previous value is served.
 
 ```php
 Ledric::draftEntry([
-    'type' => 'post',
-    'slug' => 'new-post',
-    'content' => ['title' => 'Hi', 'body' => '...'],
-    'schema_version' => 1,
+    'type'   => 'post',
+    'slug'   => 'new-post',                        // optional — present means update, absent means create
+    'fields' => ['title' => 'Hi', 'body' => '...'],
 ]);
 
 Ledric::publishEntry(['type' => 'post', 'slug' => 'new-post']);
+
+Ledric::renameEntry(['type' => 'post', 'slug' => 'new-post', 'new_slug' => 'shipped']);
+
+Ledric::addEntryTags(['type' => 'post', 'slug' => 'shipped', 'tags' => ['featured']]);
 ```
 
-Writes invalidate cached reads of the same type.
+Flat `{type, slug}` is auto-translated to the `{ref: {type, slug}}` shape ledric's RPC schemas require, so you can use whichever feels natural. Writes invalidate cached reads of the same type.
 
 ## Asset proxy
 
@@ -92,7 +95,7 @@ ledric and cached per-variant.
 
 The proxy sets `X-Forwarded-Prefix` on outbound requests so ledric
 emits a `<base href>` and `window.LEDRIC_BASE_URL` matching the
-external prefix. Requires ledric ≥ 0.4.0 for this behavior.
+external prefix. Requires ledric ≥ 0.3.5 for this behavior.
 
 ## Inline editor
 

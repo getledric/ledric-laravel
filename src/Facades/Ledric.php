@@ -14,6 +14,8 @@ use Ledric\Laravel\Cache\CachedClient;
  * @method static array|null getAsset(string $id)
  * @method static array draftEntry(array $args)
  * @method static array publishEntry(array $args)
+ * @method static array renameEntry(array $args)
+ * @method static array deleteEntry(array $args)
  * @method static array addEntryTags(array $args)
  * @method static array removeEntryTags(array $args)
  * @method static array alterType(array $args)

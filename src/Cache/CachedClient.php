@@ -168,28 +168,42 @@ class CachedClient
     public function draftEntry(array $args): array
     {
         $r = $this->client->draftEntry($args);
-        $this->invalidateType($args['type'] ?? null);
+        $this->invalidateType($this->extractType($args));
         return $r;
     }
 
     public function publishEntry(array $args): array
     {
         $r = $this->client->publishEntry($args);
-        $this->invalidateType($args['type'] ?? null);
+        $this->invalidateType($this->extractType($args));
+        return $r;
+    }
+
+    public function renameEntry(array $args): array
+    {
+        $r = $this->client->renameEntry($args);
+        $this->invalidateType($this->extractType($args));
+        return $r;
+    }
+
+    public function deleteEntry(array $args): array
+    {
+        $r = $this->client->deleteEntry($args);
+        $this->invalidateType($this->extractType($args));
         return $r;
     }
 
     public function addEntryTags(array $args): array
     {
         $r = $this->client->addEntryTags($args);
-        $this->invalidateType($args['type'] ?? null);
+        $this->invalidateType($this->extractType($args));
         return $r;
     }
 
     public function removeEntryTags(array $args): array
     {
         $r = $this->client->removeEntryTags($args);
-        $this->invalidateType($args['type'] ?? null);
+        $this->invalidateType($this->extractType($args));
         return $r;
     }
 
@@ -199,6 +213,25 @@ class CachedClient
         $this->invalidateType($args['name'] ?? ($args['type'] ?? null));
         $this->invalidateMeta();
         return $r;
+    }
+
+    /**
+     * Pull a type name out of write-method args. Accepts both the flat
+     * `{type, slug}` convenience form and the wire `{ref: {type, slug}}`
+     * form so invalidation works regardless of which shape the caller
+     * used.
+     *
+     * @param  array<string, mixed>  $args
+     */
+    protected function extractType(array $args): ?string
+    {
+        if (isset($args['ref']) && is_array($args['ref']) && isset($args['ref']['type'])) {
+            return (string) $args['ref']['type'];
+        }
+        if (isset($args['type'])) {
+            return (string) $args['type'];
+        }
+        return null;
     }
 
     /**
