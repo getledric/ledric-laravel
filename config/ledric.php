@@ -69,8 +69,29 @@ return [
         ],
 
         // Middleware applied before AdminGate (which checks user_ids).
-        // Default chain auths via the standard 'web' guard.
-        'middleware' => ['web', 'auth'],
+        //
+        // Default is the standard `web` group MINUS VerifyCsrfToken.
+        // The GUI's api.js builds plain `fetch()` requests with no
+        // CSRF token, so VerifyCsrfToken would 419 every write. The
+        // proxy is a same-origin admin surface gated by AdminGate's
+        // user-ID allow-list, and Laravel's default SameSite=Lax on
+        // the session cookie already blocks cross-site CSRF. We don't
+        // use the literal 'web' alias because it'd pull in the user's
+        // App\Http\Middleware\VerifyCsrfToken, which `withoutMiddleware`
+        // can't reliably exclude across versions.
+        //
+        // Override to ['web', 'auth'] (or your own stack) if you want
+        // CSRF on top — you'll then need to add this prefix to your
+        // App\Http\Middleware\VerifyCsrfToken::$except array OR inject
+        // the token into the GUI yourself.
+        'middleware' => [
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            'auth',
+        ],
     ],
 
     'assets' => [

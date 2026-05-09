@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Fixed
+- **CSRF 419 on every proxy POST.** Default admin middleware was
+  `['web', 'auth']`, but `web` includes VerifyCsrfToken — the GUI's
+  api.js builds plain fetch() requests with no token, so every
+  POST /rpc 419'd. Default middleware is now the `web` group
+  *components minus VerifyCsrfToken* (EncryptCookies, StartSession,
+  ShareErrorsFromSession, SubstituteBindings + auth). SameSite=Lax
+  on the session cookie + AdminGate's user-ID allow-list cover the
+  realistic threat model. **Action for users who've published config:**
+  re-publish (`php artisan vendor:publish --tag=ledric-config --force`)
+  or update `ledric.admin.middleware` manually.
 - **AdminProxy demuxes API vs GUI paths.** ledric's API endpoints
   (`/types`, `/rpc`, `/entries/...`, `/assets/...`, `/tags`, `/auth/...`,
   `/.well-known/...`, `/mcp`) live at the upstream root, but the GUI is
