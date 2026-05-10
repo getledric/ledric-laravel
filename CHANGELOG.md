@@ -2,18 +2,18 @@
 
 ## Unreleased
 
-### Changed (breaking — requires ledric ≥ 0.3.9)
+### Changed (breaking — requires ledric ≥ 0.3.8)
 - **Default admin middleware is back to `['web', 'auth']`.** Both the
   earlier `web`-minus-CSRF hardcode (e3dd1fc) and the derived
   `ledric.web_no_csrf` group (db938bd) are gone. The GUI now reads the
   Laravel `XSRF-TOKEN` cookie and forwards it as `X-XSRF-TOKEN`
-  (ledric ≥ 0.3.9), so `VerifyCsrfToken` accepts proxied POSTs the
+  (ledric ≥ 0.3.8), so `VerifyCsrfToken` accepts proxied POSTs the
   Laravel-idiomatic way — no custom middleware machinery, no
   `EncryptCookies`-subclass mismatch, no security trade-off.
   **Action:** users on a published config need to re-publish
   (`php artisan vendor:publish --tag=ledric-config --force`) or set
   `admin.middleware` to `['web', 'auth']` manually. Bump ledric to
-  ≥ 0.3.9 first.
+  ≥ 0.3.8 first.
 - **Asset uploads were forwarding empty bodies.** PHP populates
   `$_FILES`/`$_POST` for `multipart/form-data` requests and leaves
   `php://input` empty; the proxy's `$request->getContent()` returned
