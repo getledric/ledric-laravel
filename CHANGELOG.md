@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Fixed
+- **SPA deep refresh broken when the path's first segment matches an
+  API endpoint.** Visiting `/ledric-admin/types/page/about-summit` and
+  hitting refresh used to return JSON (the proxy demuxed `types` to
+  ledric's REST endpoint) instead of the SPA shell. The demux now
+  considers the inbound `Accept` header: requests with `text/html`
+  (browser navigation) skip the API-path demux and stay inside the
+  admin/ prefix so ledric's setNotFoundHandler serves the SPA shell.
+  api.js's `fetch()` uses `*/*` by default and still routes to root
+  for actual API calls.
+
 ### Changed (breaking — requires ledric ≥ 0.3.8)
 - **Default admin middleware is back to `['web', 'auth']`.** Both the
   earlier `web`-minus-CSRF hardcode (e3dd1fc) and the derived

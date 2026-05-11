@@ -102,6 +102,18 @@ class AdminProxyTest extends TestCase
         $this->assertStringContainsString('unreachable', $response->getContent());
     }
 
+    // Symfony's Request::create() defaults Accept to text/html
+    // (mimicking a browser). api.js's fetch() defaults to wildcard.
+    // The demux uses Accept to distinguish browser navigation (→ SPA
+    // shell) from JS data calls (→ API), so tests for the API path
+    // must explicitly set Accept to the wildcard.
+    private function apiRequest(string $url, string $method = 'GET'): Request
+    {
+        $req = Request::create($url, $method);
+        $req->headers->set('Accept', '*/*');
+        return $req;
+    }
+
     public function test_api_path_types_forwards_to_root_not_admin_prefix(): void
     {
         // ledric's /types is at root. The GUI's api.types() calls
@@ -111,7 +123,7 @@ class AdminProxyTest extends TestCase
         $this->mockHandler->append(new Response(200, [], '{"types":[]}'));
 
         $this->app->make(AdminProxyController::class)
-            ->handle(Request::create('/ledric-admin/types'), 'types');
+            ->handle($this->apiRequest('/ledric-admin/types'), 'types');
 
         $this->assertSame('/types', $this->history[0]['request']->getUri()->getPath());
     }
@@ -121,7 +133,7 @@ class AdminProxyTest extends TestCase
         $this->mockHandler->append(new Response(200, [], '{"required":false}'));
 
         $this->app->make(AdminProxyController::class)
-            ->handle(Request::create('/ledric-admin/auth/status'), 'auth/status');
+            ->handle($this->apiRequest('/ledric-admin/auth/status'), 'auth/status');
 
         $this->assertSame('/auth/status', $this->history[0]['request']->getUri()->getPath());
     }
@@ -131,7 +143,7 @@ class AdminProxyTest extends TestCase
         $this->mockHandler->append(new Response(200, [], '{"result":null}'));
 
         $this->app->make(AdminProxyController::class)
-            ->handle(Request::create('/ledric-admin/rpc', 'POST'), 'rpc');
+            ->handle($this->apiRequest('/ledric-admin/rpc', 'POST'), 'rpc');
 
         $this->assertSame('/rpc', $this->history[0]['request']->getUri()->getPath());
     }
@@ -162,6 +174,42 @@ class AdminProxyTest extends TestCase
         $this->assertSame('/admin/inline/page/about-summit', $this->history[0]['request']->getUri()->getPath());
     }
 
+    public function test_html_refresh_on_api_shaped_path_routes_to_spa_shell(): void
+    {
+        // Deep-route SPA refresh hits a path that looks like an API
+        // call (`/types/page/about`). api.js's fetch() defaults to
+        // `*/*` so the demux routes it to root; browser navigation
+        // always sends `Accept: text/html`, which signals "this is
+        // the SPA shell, not a data call." Without the Accept-based
+        // branch the proxy returns JSON instead of HTML on refresh.
+        $this->mockHandler->append(new Response(200, [], '<html>'));
+
+        $req = Request::create('/ledric-admin/types/page/about-summit', 'GET');
+        $req->headers->set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+
+        $this->app->make(AdminProxyController::class)
+            ->handle($req, 'types/page/about-summit');
+
+        // Should land at /admin/types/page/about-summit (SPA shell),
+        // NOT /types/page/about-summit (API).
+        $this->assertSame('/admin/types/page/about-summit', $this->history[0]['request']->getUri()->getPath());
+    }
+
+    public function test_fetch_request_on_same_path_still_routes_to_api(): void
+    {
+        // Same path as above, but via fetch() with default `*/*` Accept.
+        // This is the api.js read of a type definition — must reach
+        // the REST endpoint, not the SPA shell.
+        $this->mockHandler->append(new Response(200, [], '{"name":"page"}'));
+
+        $req = Request::create('/ledric-admin/types/page', 'GET');
+        $req->headers->set('Accept', '*/*');
+
+        $this->app->make(AdminProxyController::class)->handle($req, 'types/page');
+
+        $this->assertSame('/types/page', $this->history[0]['request']->getUri()->getPath());
+    }
+
     public function test_multipart_upload_is_reconstructed_and_forwarded(): void
     {
         // PHP eats the raw body for multipart POSTs and leaves
@@ -177,7 +225,10 @@ class AdminProxyTest extends TestCase
             ['alt' => 'a tiny avatar', 'kind' => 'image'],
             [],
             ['file' => $file],
-            ['CONTENT_TYPE' => 'multipart/form-data; boundary=----test']
+            [
+                'CONTENT_TYPE' => 'multipart/form-data; boundary=----test',
+                'HTTP_ACCEPT'  => '*/*',
+            ]
         );
 
         $this->app->make(AdminProxyController::class)->handle($request, 'assets');
@@ -216,6 +267,7 @@ class AdminProxyTest extends TestCase
         ])));
         $request = Request::create('/ledric-admin/rpc', 'POST', [], [], [], [
             'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT'  => '*/*',
         ], json_encode([
             'tool' => 'publish',
             'args' => ['ref' => ['type' => 'page', 'slug' => 'a']],

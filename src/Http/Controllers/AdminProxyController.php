@@ -73,7 +73,16 @@ class AdminProxyController extends Controller
         $upstreamPrefix = trim((string) config('ledric.admin.upstream_prefix', 'admin'), '/');
         $rootPaths      = (array) config('ledric.admin.upstream_root_paths', []);
 
-        $upstreamPath = $this->resolveUpstreamPath($path, $upstreamPrefix, $rootPaths);
+        // Browser-nav requests always include `text/html` in Accept;
+        // api.js's `fetch()` defaults to `*/*`. Use that to disable
+        // the API/GUI demux for HTML requests, so a deep SPA refresh
+        // (e.g. /ledric-admin/types/page/about) stays inside the
+        // admin/ prefix and ledric's setNotFoundHandler serves the
+        // SPA shell. Without this, the first path segment matching
+        // an API path (`types`, `entries`, …) gets routed to ledric's
+        // REST endpoint and the user sees JSON instead of the GUI.
+        $wantsHtml = stripos((string) $request->header('Accept', ''), 'text/html') !== false;
+        $upstreamPath = $this->resolveUpstreamPath($path, $upstreamPrefix, $rootPaths, $wantsHtml);
 
         $isMultipart = stripos((string) $request->header('Content-Type', ''), 'multipart/') === 0;
         $multipart   = $isMultipart ? $this->buildMultipart($request) : null;
@@ -199,16 +208,19 @@ class AdminProxyController extends Controller
     /**
      * Demux GUI vs API paths. ledric's API endpoints (`/types`, `/rpc`,
      * `/entries/...`, `/assets/...`, `/tags`, `/auth/...`) live at the
-     * upstream root, but the GUI is under `/admin/*`.
+     * upstream root, but the GUI is under `/admin/*`. HTML requests
+     * (browser navigation) always stay under the admin prefix so deep
+     * SPA refreshes work — ledric's setNotFoundHandler serves the
+     * shell for any HTML request inside the mount.
      *
      * @param  array<int, string>  $rootPaths
      */
-    protected function resolveUpstreamPath(string $path, string $upstreamPrefix, array $rootPaths): string
+    protected function resolveUpstreamPath(string $path, string $upstreamPrefix, array $rootPaths, bool $wantsHtml = false): string
     {
         $clean = ltrim($path, '/');
         $first = $clean === '' ? '' : (explode('/', $clean, 2)[0] ?? '');
 
-        if ($first !== '' && in_array($first, $rootPaths, true)) {
+        if (!$wantsHtml && $first !== '' && in_array($first, $rootPaths, true)) {
             return $clean;
         }
 
